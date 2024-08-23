@@ -1,0 +1,173 @@
+From 652cf46c1294e7f0f03f9345d95eb7df0ad69570 Mon Sep 17 00:00:00 2001
+From: Nasruddin Annapuri <nasruddinannapuri@gmail.com>
+Date: Fri, 23 Aug 2024 10:14:36 +0530
+Subject: [PATCH] initial commit
+
+---
+ 0001-Move-python-files-to-datafeed-dir.patch | 23 +++++++++++
+ multi_commit.patch                           |  0
+ src/DataManipulator.ts                       | 36 +++++++++++------
+ src/Graph.tsx                                | 41 +++++++++++++-------
+ 4 files changed, 74 insertions(+), 26 deletions(-)
+ create mode 100644 0001-Move-python-files-to-datafeed-dir.patch
+ create mode 100644 multi_commit.patch
+
+diff --git a/0001-Move-python-files-to-datafeed-dir.patch b/0001-Move-python-files-to-datafeed-dir.patch
+new file mode 100644
+index 0000000..6713db0
+--- /dev/null
++++ b/0001-Move-python-files-to-datafeed-dir.patch
+@@ -0,0 +1,23 @@
++From 988093e37b2ec7e0215609bce5445569a1a33612 Mon Sep 17 00:00:00 2001
++From: Joe Ferrer <joe@theforage.com>
++Date: Wed, 1 Mar 2023 01:05:18 +1100
++Subject: [PATCH] Move python files to datafeed dir
++
++---
++ requirements.txt => datafeed/requirements.txt | 0
++ server.py => datafeed/server3.py              | 0
++ 2 files changed, 0 insertions(+), 0 deletions(-)
++ rename requirements.txt => datafeed/requirements.txt (100%)
++ rename server.py => datafeed/server3.py (100%)
++
++diff --git a/requirements.txt b/datafeed/requirements.txt
++similarity index 100%
++rename from requirements.txt
++rename to datafeed/requirements.txt
++diff --git a/server.py b/datafeed/server3.py
++similarity index 100%
++rename from server.py
++rename to datafeed/server3.py
++-- 
++2.41.0.windows.1
++
+diff --git a/multi_commit.patch b/multi_commit.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/DataManipulator.ts b/src/DataManipulator.ts
+index 7f62295..46d06d9 100644
+--- a/src/DataManipulator.ts
++++ b/src/DataManipulator.ts
+@@ -1,20 +1,32 @@
+ import { ServerRespond } from './DataStreamer';
+ 
+ export interface Row {
+-  stock: string,
+-  top_ask_price: number,
+-  timestamp: Date,
++  price_abc: number;
++  price_def: number;
++  ratio: number;
++  timestamp: Date;
++  upper_bound: number;
++  lower_bound: number;
++  trigger_alert?: number | undefined;
+ }
+ 
+-
+ export class DataManipulator {
+-  static generateRow(serverResponds: ServerRespond[]) {
+-    return serverResponds.map((el: any) => {
+-      return {
+-        stock: el.stock,
+-        top_ask_price: el.top_ask && el.top_ask.price || 0,
+-        timestamp: el.timestamp,
+-      };
+-    })
++  static generateRow(data: ServerRespond[]): Row {
++    const priceABC = (data[0].top_ask.price + data[0].top_bid.price) / 2;
++    const priceDEF = (data[1].top_ask.price + data[1].top_bid.price) / 2;
++    const ratio = priceABC / priceDEF;
++
++    const upper_bound = 1.05; // Example constant
++    const lower_bound = 0.95; // Example constant
++
++    return {
++      price_abc: priceABC,
++      price_def: priceDEF,
++      ratio,
++      timestamp: data[0].timestamp > data[1].timestamp ? data[0].timestamp : data[1].timestamp,
++      upper_bound: upper_bound,
++      lower_bound: lower_bound,
++      trigger_alert: (ratio > upper_bound || ratio < lower_bound) ? ratio : undefined,
++    };
+   }
+ }
+diff --git a/src/Graph.tsx b/src/Graph.tsx
+index 277797d..37c22c5 100644
+--- a/src/Graph.tsx
++++ b/src/Graph.tsx
+@@ -1,5 +1,5 @@
+ import React, { Component } from 'react';
+-import { Table } from '@finos/perspective';
++import { Table, TableData } from '@finos/perspective';
+ import { ServerRespond } from './DataStreamer';
+ import { DataManipulator } from './DataManipulator';
+ import './Graph.css';
+@@ -23,11 +23,15 @@ class Graph extends Component<IProps, {}> {
+     const elem = document.getElementsByTagName('perspective-viewer')[0] as unknown as PerspectiveViewerElement;
+ 
+     const schema = {
+-      stock: 'string',
+-      top_ask_price: 'float',
+-      top_bid_price: 'float',
++      price_abc: 'float',
++      price_def: 'float',
++      ratio: 'float',
+       timestamp: 'date',
++      upper_bound: 'float',
++      lower_bound: 'float',
++      trigger_alert: 'float',
+     };
++    
+ 
+     if (window.perspective && window.perspective.worker()) {
+       this.table = window.perspective.worker().table(schema);
+@@ -36,25 +40,34 @@ class Graph extends Component<IProps, {}> {
+       // Load the `table` in the `<perspective-viewer>` DOM reference.
+       elem.load(this.table);
+       elem.setAttribute('view', 'y_line');
+-      elem.setAttribute('column-pivots', '["stock"]');
+       elem.setAttribute('row-pivots', '["timestamp"]');
+-      elem.setAttribute('columns', '["top_ask_price"]');
++      elem.setAttribute('columns', '["ratio","lower_bound", "upper_bound", "trigger_alert"] ');
+       elem.setAttribute('aggregates', JSON.stringify({
+-        stock: 'distinctcount',
+-        top_ask_price: 'avg',
+-        top_bid_price: 'avg',
++        price_abc: 'avg',
++        price_def: 'avg',
++        ratio: 'avg',
+         timestamp: 'distinct count',
++        upper_bound: 'avg',
++        lower_bound: 'avg',
++        trigger_alert: 'avg',
+       }));
+     }
+   }
+ 
+   componentDidUpdate() {
+-    if (this.table) {
+-      this.table.update(
+-        DataManipulator.generateRow(this.props.data),
+-      );
+-    }
++   if(this.table){
++    this.table.update([
++      DataManipulator.generateRow(this.props.data),
++    ] as unknown as TableData);
++   }
+   }
++  
++  
++  
++  
++  
++  
++  
+ }
+ 
+ export default Graph;
+-- 
+2.41.0.windows.1
+
